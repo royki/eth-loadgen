@@ -1,0 +1,11 @@
+[flake8]
+# Ignore E402 - module level import not at top of file
+# This is needed because load_dotenv() must be called before config imports
+max-line-length = 120
+ignore = E501, W503, E402
+exclude =
+    venv,
+    __pycache__,
+    .git,
+    *.pyc
+
