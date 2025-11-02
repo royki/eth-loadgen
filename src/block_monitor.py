@@ -20,6 +20,7 @@ class BlockMonitor:
         self.poll_interval = poll_interval
         self.monitoring = False
         self.monitor_thread = None
+        self._suppress_output = False  # Temporarily suppress output during user input
 
         # Block tracking data
         self.last_block_number: Optional[int] = None
@@ -79,11 +80,12 @@ class BlockMonitor:
                         self.sum_intervals += interval
                         self.avg_block_time = self.sum_intervals / self.total_intervals
 
-                        # Print new block detection log
-                        print(
-                            f"🔷 New block detected: #{current_block_number} | Interval: {interval:.2f}s | Avg: {self.avg_block_time:.2f}s",
-                            flush=True,
-                        )
+                        # Print new block detection log (unless temporarily suppressed)
+                        if not self._suppress_output:
+                            print(
+                                f"🔷 New block detected: #{current_block_number} | Interval: {interval:.2f}s | Avg: {self.avg_block_time:.2f}s",
+                                flush=True,
+                            )
 
                     # Update last block info
                     if self.last_block_number is None or current_block_number > self.last_block_number:
@@ -105,6 +107,14 @@ class BlockMonitor:
         """Get average block production time in seconds."""
         with self.lock:
             return self.avg_block_time
+
+    def suppress_output(self):
+        """Temporarily suppress output (e.g., during user input)."""
+        self._suppress_output = True
+
+    def enable_output(self):
+        """Re-enable output (e.g., after user input)."""
+        self._suppress_output = False
 
     def get_stats(self) -> dict:
         """Get current block statistics."""

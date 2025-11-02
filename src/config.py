@@ -51,6 +51,14 @@ SERVER_TPS = int(os.getenv("SERVER_TPS", "5"))
 SERVER_DURATION = int(os.getenv("SERVER_DURATION", "60"))
 SERVER_GAS = int(os.getenv("SERVER_GAS", "21000"))
 
+# Server Test Re-execution Configuration
+# SERVER_NUM_RUNS: Number of test runs. Default: "1" (single run)
+#   - "1" or any positive integer: Run that many times
+#   - "continuous" or "0": Run continuously until stopped
+SERVER_NUM_RUNS = os.getenv("SERVER_NUM_RUNS", "1")
+# SERVER_TEST_INTERVAL: Seconds to wait between test runs (default: 60)
+SERVER_TEST_INTERVAL = int(os.getenv("SERVER_TEST_INTERVAL", "60"))
+
 # Metrics Server Configuration
 METRICS_HOST = os.getenv("METRICS_HOST", "0.0.0.0")  # 0.0.0.0 for Docker, set to localhost in .env for host
 METRICS_PORT = int(os.getenv("METRICS_PORT", "9000"))

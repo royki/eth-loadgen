@@ -37,6 +37,8 @@ from src.config import (  # noqa: E402
     SERVER_TPS,
     SERVER_DURATION,
     SERVER_GAS,
+    SERVER_NUM_RUNS,
+    SERVER_TEST_INTERVAL,
 )
 from src.config import METRICS_HOST, METRICS_PORT, BLOCK_POLL_INTERVAL, METRICS_WINDOW_PERIOD  # noqa: E402
 from src.metrics import Metrics  # noqa: E402
@@ -86,6 +88,12 @@ def run_server_mode(w3, pref_account, pref_key_hex):
     print(f"   Load mode: {LOAD_MODE} (default/random/round-robin)")
     print(f"   TPS: {TPS_SERVER}")
     print(f"   Duration: {DURATION_SERVER}s")
+    print(f"   Test runs: {SERVER_NUM_RUNS} (1=single, continuous=infinite, or number)")
+    try:
+        if SERVER_NUM_RUNS.lower() not in ("continuous", "0") and int(SERVER_NUM_RUNS) > 1:
+            print(f"   Interval between runs: {SERVER_TEST_INTERVAL}s")
+    except ValueError:
+        pass  # Invalid SERVER_NUM_RUNS value, skip interval display
 
     metrics = Metrics()
     system_monitor = SystemMonitor()
@@ -139,93 +147,177 @@ def run_server_mode(w3, pref_account, pref_key_hex):
         f"   Ephemeral (avg): {sum([a['balance_eth'] for a in balances['ephemeral']]) / len(balances['ephemeral']):.2f} ETH"
     )
 
-    # Start load test with preset values
-    print("\n🚀 Starting automated load test...")
-    metrics.reset()
+    # Determine number of runs
+    is_continuous = SERVER_NUM_RUNS.lower() == "continuous" or SERVER_NUM_RUNS == "0"
+    if is_continuous:
+        num_runs = None  # Infinite
+        print("\n🔄 Running tests continuously (until Ctrl+C)...")
+    else:
+        num_runs = int(SERVER_NUM_RUNS)
+        print(f"\n🔄 Running {num_runs} test run(s)...")
 
+    # Test execution loop
     tx_value_config = (TX_MIN, TX_MAX, TX_INCREMENT, VALUE_MODE)
-    metrics.set_tx_value_config(
-        {
-            "TX_VALUE_MIN": TX_MIN,
-            "TX_VALUE_MAX": TX_MAX,
-            "TX_VALUE_INCREMENT": TX_INCREMENT,
-            "TX_VALUE_MODE": VALUE_MODE,
-        }
-    )
-
-    # Capture baseline system metrics before test starts
-    system_monitor.capture_baseline()
+    run_count = 0
 
     try:
-        apply_tps_load(
-            w3,
-            pref_account,
-            pref_key_hex,
-            ephemeral_accounts,
-            TPS_SERVER,
-            DURATION_SERVER,
-            GAS_SERVER,
-            tx_value_config,
-            LOAD_MODE,
-            metrics,
-            system_monitor,
-        )
-    except Exception as e:
-        print(f"\n❌ ERROR during load test: {e}", flush=True)
-        import traceback
+        while True:
+            run_count += 1
+            if num_runs is not None and run_count > num_runs:
+                break  # Reached target number of runs
 
-        traceback.print_exc()
-        raise
+            print("\n" + "=" * 60, flush=True)
+            if is_continuous:
+                print(f"🚀 Starting test run #{run_count} (continuous mode)...", flush=True)
+            else:
+                print(f"🚀 Starting test run #{run_count}/{num_runs}...", flush=True)
+            print("=" * 60, flush=True)
 
-    # Update metrics after load test
-    print("\n📊 Generating metrics report...", flush=True)
-    report = metrics.report()
-    sys_summary = system_monitor.get_summary() if system_monitor.samples else None
-    metrics_server.update_metrics(report, sys_summary, LOAD_MODE)
+            # Check if ephemeral accounts need to be recreated/refunded
+            # For simplicity, always recreate them each run (user said it's OK)
+            # This ensures accounts always have funds
+            print("\n⏳ Checking/Recreating ephemeral accounts...", flush=True)
+            try:
+                ephemeral_accounts = create_and_fund_ephemeral_accounts(w3, pref_account, pref_key_hex, NUM_ACCOUNTS, FUND_AMOUNT)
+                print(f"✅ Created {len(ephemeral_accounts)} ephemeral accounts", flush=True)
 
-    # Print metrics report
-    print("\n" + "=" * 60, flush=True)
-    print("📊 METRICS REPORT", flush=True)
-    print("=" * 60, flush=True)
-    print("\n=== Transaction Metrics ===", flush=True)
-    for key, value in report.items():
-        if key != "account_balances":  # Skip account_balances, will print separately
-            print(f"  {key}: {value}", flush=True)
+                # Wait for funding transactions to be mined
+                print("Waiting for funding transactions to be mined...", flush=True)
+                time.sleep(10)
 
-    if sys_summary:
-        print("\n=== System Metrics ===", flush=True)
-        for key, value in sys_summary.items():
-            print(f"  {key}: {value}", flush=True)
+                # Update ephemeral accounts in metrics server
+                metrics_server.ephemeral_accounts = ephemeral_accounts
 
-    # Add block production time metrics
-    block_stats = block_monitor.get_stats()
-    if block_stats:
-        print("\n=== Block Production Time ===", flush=True)
-        current_block_number = block_stats.get("current_block_number")
-        current_interval = block_stats.get("current_block_interval_seconds")
-        if current_block_number is not None and current_interval is not None:
-            print(
-                f"  eth_block_production_time_seconds: {current_interval:.2f} seconds (block {current_block_number})",
-                flush=True,
+                # Update balances
+                balances = {
+                    "prefunded": {
+                        "address": pref_account.address,
+                        "balance_eth": float(w3.from_wei(w3.eth.get_balance(pref_account.address), "ether")),
+                    },
+                    "ephemeral": [],
+                }
+                for acct, _ in ephemeral_accounts:
+                    balance = w3.eth.get_balance(acct.address)
+                    balances["ephemeral"].append(
+                        {
+                            "address": acct.address,
+                            "balance_eth": float(w3.from_wei(balance, "ether")),
+                        }
+                    )
+                metrics.set_account_balances(balances)
+            except Exception as e:
+                print(f"⚠️  Warning: Failed to recreate accounts: {e}", flush=True)
+                print("   Continuing with existing accounts (may run out of funds)...", flush=True)
+
+            # Reset transaction metrics for new test run
+            # NOTE: Block monitoring continues (not reset) to track network performance over time
+            metrics.reset()
+
+            metrics.set_tx_value_config(
+                {
+                    "TX_VALUE_MIN": TX_MIN,
+                    "TX_VALUE_MAX": TX_MAX,
+                    "TX_VALUE_INCREMENT": TX_INCREMENT,
+                    "TX_VALUE_MODE": VALUE_MODE,
+                }
             )
-        elif current_interval is not None:
-            print(
-                f"  eth_block_production_time_seconds: {current_interval:.2f} seconds",
-                flush=True,
-            )
-        avg_interval = block_stats.get("average_block_interval_seconds")
-        if avg_interval is not None:
-            print(
-                f"  eth_block_production_time_avg_seconds: {avg_interval:.2f} seconds",
-                flush=True,
-            )
-        if current_block_number is not None:
-            print(
-                f"  eth_block_total_blocks_tracked: {block_stats.get('total_blocks_tracked', 0)} (current block: {current_block_number})",
-                flush=True,
-            )
-        else:
-            print(f"  eth_block_total_blocks_tracked: {block_stats.get('total_blocks_tracked', 0)}", flush=True)
+
+            # Capture baseline system metrics before test starts
+            system_monitor.capture_baseline()
+
+            # Execute load test
+            try:
+                apply_tps_load(
+                    w3,
+                    pref_account,
+                    pref_key_hex,
+                    ephemeral_accounts,
+                    TPS_SERVER,
+                    DURATION_SERVER,
+                    GAS_SERVER,
+                    tx_value_config,
+                    LOAD_MODE,
+                    metrics,
+                    system_monitor,
+                )
+            except Exception as e:
+                print(f"\n❌ ERROR during load test run #{run_count}: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+
+                # If continuous mode, continue to next run; otherwise raise
+                if is_continuous:
+                    print(f"   Continuing to next test run...", flush=True)
+                    if SERVER_TEST_INTERVAL > 0:
+                        time.sleep(SERVER_TEST_INTERVAL)
+                    continue
+                else:
+                    raise
+
+            # Update metrics after load test
+            print("\n📊 Generating metrics report...", flush=True)
+            report = metrics.report()
+            sys_summary = system_monitor.get_summary() if system_monitor.samples else None
+            metrics_server.update_metrics(report, sys_summary, LOAD_MODE)
+
+            # Print metrics report for this run
+            print("\n" + "=" * 60, flush=True)
+            print(f"📊 METRICS REPORT - Run #{run_count}", flush=True)
+            print("=" * 60, flush=True)
+            print("\n=== Transaction Metrics ===", flush=True)
+            for key, value in report.items():
+                if key != "account_balances":  # Skip account_balances, will print separately
+                    print(f"  {key}: {value}", flush=True)
+
+            if sys_summary:
+                print("\n=== System Metrics ===", flush=True)
+                for key, value in sys_summary.items():
+                    print(f"  {key}: {value}", flush=True)
+
+            # Add block production time metrics (NOT reset - shows network performance over time)
+            block_stats = block_monitor.get_stats()
+            if block_stats:
+                print("\n=== Block Production Time (network-wide, cumulative) ===", flush=True)
+                current_block_number = block_stats.get("current_block_number")
+                current_interval = block_stats.get("current_block_interval_seconds")
+                if current_block_number is not None and current_interval is not None:
+                    print(
+                        f"  eth_block_production_time_seconds: {current_interval:.2f} seconds (block {current_block_number})",
+                        flush=True,
+                    )
+                elif current_interval is not None:
+                    print(
+                        f"  eth_block_production_time_seconds: {current_interval:.2f} seconds",
+                        flush=True,
+                    )
+                avg_interval = block_stats.get("average_block_interval_seconds")
+                if avg_interval is not None:
+                    print(
+                        f"  eth_block_production_time_avg_seconds: {avg_interval:.2f} seconds",
+                        flush=True,
+                    )
+                if current_block_number is not None:
+                    print(
+                        f"  eth_block_total_blocks_tracked: {block_stats.get('total_blocks_tracked', 0)} (current block: {current_block_number})",
+                        flush=True,
+                    )
+                else:
+                    print(f"  eth_block_total_blocks_tracked: {block_stats.get('total_blocks_tracked', 0)}", flush=True)
+
+            # Check if we should continue
+            if num_runs is not None and run_count >= num_runs:
+                print("\n" + "=" * 60, flush=True)
+                print(f"✅ Completed {num_runs} test run(s)", flush=True)
+                print("=" * 60, flush=True)
+                break
+
+            # Wait before next test run
+            if SERVER_TEST_INTERVAL > 0:
+                print(f"\n⏸️  Waiting {SERVER_TEST_INTERVAL}s before next test run...", flush=True)
+                time.sleep(SERVER_TEST_INTERVAL)
+
+    except KeyboardInterrupt:
+        print(f"\n\n⚠️  Interrupted after {run_count} test run(s)", flush=True)
 
     print("\n" + "=" * 60, flush=True)
     print("📊 SERVER MODE COMPLETE", flush=True)
@@ -238,7 +330,7 @@ def run_server_mode(w3, pref_account, pref_key_hex):
 
     print("\nPress Ctrl+C to exit (server keeps running)...", flush=True)
 
-    # Keep running
+    # Keep running (for metrics server)
     try:
         while True:
             time.sleep(60)
@@ -309,14 +401,24 @@ def run_cli_mode(w3, pref_account, pref_key_hex):
         print("6. Show metrics URL")
         print("7. Show account balances")
         print("8. Quit")
-        choice = input("Choose: ").strip()
+        # Suppress block monitor output during user input
+        block_monitor.suppress_output()
+        try:
+            choice = input("Choose: ").strip()
+        finally:
+            # Re-enable block monitor output after input
+            block_monitor.enable_output()
 
         if choice == "1":
             show_network_info(w3)
         elif choice == "2":
             try:
-                n = int(input("Number of ephemeral accounts: ").strip())
-                eth_amt = float(input("ETH to fund each: ").strip())
+                block_monitor.suppress_output()
+                try:
+                    n = int(input("Number of ephemeral accounts: ").strip())
+                    eth_amt = float(input("ETH to fund each: ").strip())
+                finally:
+                    block_monitor.enable_output()
             except Exception:
                 print("Invalid number")
                 continue
@@ -355,17 +457,25 @@ def run_cli_mode(w3, pref_account, pref_key_hex):
                 print("You must create & fund ephemeral accounts first.")
                 continue
             try:
-                tps = int(input(f"TPS [{DEFAULT_TPS}]: ").strip() or DEFAULT_TPS)
-                gas = int(input(f"Gas [{DEFAULT_GAS}]: ").strip() or DEFAULT_GAS)
+                block_monitor.suppress_output()
+                try:
+                    tps = int(input(f"TPS [{DEFAULT_TPS}]: ").strip() or DEFAULT_TPS)
+                    gas = int(input(f"Gas [{DEFAULT_GAS}]: ").strip() or DEFAULT_GAS)
 
-                # Ask about incremental values
-                use_inc = input(f"Use incremental tx values? [{USE_INCREMENTAL_VALUE}]: ").strip()
+                    # Ask about incremental values
+                    use_inc = input(f"Use incremental tx values? [{USE_INCREMENTAL_VALUE}]: ").strip()
+                finally:
+                    block_monitor.enable_output()
                 use_inc = use_inc.lower() if use_inc else str(USE_INCREMENTAL_VALUE).lower()
                 use_incremental = use_inc in ("yes", "y", "true", "1")
 
                 if use_incremental:
-                    tx_value_min = float(input(f"Min tx value ETH [{TX_VALUE_MIN}]: ").strip() or TX_VALUE_MIN)
-                    tx_value_max = float(input(f"Max tx value ETH [{TX_VALUE_MAX}]: ").strip() or TX_VALUE_MAX)
+                    block_monitor.suppress_output()
+                    try:
+                        tx_value_min = float(input(f"Min tx value ETH [{TX_VALUE_MIN}]: ").strip() or TX_VALUE_MIN)
+                        tx_value_max = float(input(f"Max tx value ETH [{TX_VALUE_MAX}]: ").strip() or TX_VALUE_MAX)
+                    finally:
+                        block_monitor.enable_output()
 
                     # Validate and guide increment input
                     range_size = tx_value_max - tx_value_min
@@ -376,9 +486,13 @@ def run_cli_mode(w3, pref_account, pref_key_hex):
                     print(f"   - Increment should be: 0 to {range_size:.6f} ETH")
 
                     while True:
-                        tx_value_inc_input = (
-                            input(f"\nIncrement ETH [{TX_VALUE_INCREMENT}]: ").strip() or TX_VALUE_INCREMENT
-                        )
+                        block_monitor.suppress_output()
+                        try:
+                            tx_value_inc_input = (
+                                input(f"\nIncrement ETH [{TX_VALUE_INCREMENT}]: ").strip() or TX_VALUE_INCREMENT
+                            )
+                        finally:
+                            block_monitor.enable_output()
                         tx_value_inc = float(tx_value_inc_input)
 
                         # Check if increment is reasonable
@@ -386,7 +500,11 @@ def run_cli_mode(w3, pref_account, pref_key_hex):
                             print(f"\n⚠️  ERROR: Increment ({tx_value_inc}) is larger than range ({range_size:.6f})")
                             print(f"   This will only generate 1 value: {tx_value_min} ETH")
                             print(f"   Please use increment <= {range_size:.6f}")
-                            proceed = input("Use this anyway? (y/n) [n]: ").strip().lower()
+                            block_monitor.suppress_output()
+                            try:
+                                proceed = input("Use this anyway? (y/n) [n]: ").strip().lower()
+                            finally:
+                                block_monitor.enable_output()
                             if proceed != "y":
                                 continue  # Ask again
 
@@ -397,7 +515,11 @@ def run_cli_mode(w3, pref_account, pref_key_hex):
                             suggested_inc = (tx_value_max - tx_value_min) / 10  # Generate ~10 values
                             print(f"\n⚠️  WARNING: Only {num_values} value(s) will be generated")
                             print(f"   Suggested increment for ~10 values: {suggested_inc:.6f}")
-                            proceed = input("Use this anyway? (y/n) [n]: ").strip().lower()
+                            block_monitor.suppress_output()
+                            try:
+                                proceed = input("Use this anyway? (y/n) [n]: ").strip().lower()
+                            finally:
+                                block_monitor.enable_output()
                             if proceed != "y":
                                 continue  # Ask again
 
@@ -407,21 +529,36 @@ def run_cli_mode(w3, pref_account, pref_key_hex):
                             print(f"  Values: {tx_value_min}, {tx_value_min + tx_value_inc}, ..., {tx_value_max}")
                         break
 
-                    tx_value_mode = (
-                        input(f"\nValue mode (ascending/descending/random) [{TX_VALUE_MODE}]: ").strip()
-                        or TX_VALUE_MODE
-                    )
+                    block_monitor.suppress_output()
+                    try:
+                        tx_value_mode = (
+                            input(f"\nValue mode (ascending/descending/random) [{TX_VALUE_MODE}]: ").strip()
+                            or TX_VALUE_MODE
+                        )
+                    finally:
+                        block_monitor.enable_output()
                     tx_value = (tx_value_min, tx_value_max, tx_value_inc, tx_value_mode)
                 else:
-                    tx_value = float(input(f"Fixed tx value ETH [{DEFAULT_TX_VALUE}]: ").strip() or DEFAULT_TX_VALUE)
+                    block_monitor.suppress_output()
+                    try:
+                        tx_value = float(input(f"Fixed tx value ETH [{DEFAULT_TX_VALUE}]: ").strip() or DEFAULT_TX_VALUE)
+                    finally:
+                        block_monitor.enable_output()
 
-                duration = int(input(f"Duration seconds [{DEFAULT_DURATION}]: ").strip() or DEFAULT_DURATION)
-                mode = input("Mode (default/random/round-robin) [default]: ").strip() or "default"
+                block_monitor.suppress_output()
+                try:
+                    duration = int(input(f"Duration seconds [{DEFAULT_DURATION}]: ").strip() or DEFAULT_DURATION)
+                    mode = input("Mode (default/random/round-robin) [default]: ").strip() or "default"
+                finally:
+                    block_monitor.enable_output()
             except Exception as e:
                 print("Invalid input", e)
                 continue
             # Reset metrics before each load test
             metrics.reset()
+
+            # Re-enable block monitor output during test execution
+            block_monitor.enable_output()
 
             # Store TX value configuration for metrics
             if isinstance(tx_value, tuple):
@@ -528,7 +665,11 @@ def run_cli_mode(w3, pref_account, pref_key_hex):
                 print("\n" + sys_metrics)
 
             # Optionally save to file
-            save = input("\nSave to file? (y/n) [n]: ").strip().lower()
+            block_monitor.suppress_output()
+            try:
+                save = input("\nSave to file? (y/n) [n]: ").strip().lower()
+            finally:
+                block_monitor.enable_output()
             if save == "y":
                 filename = "metrics.prom"
                 with open(filename, "w") as f:
