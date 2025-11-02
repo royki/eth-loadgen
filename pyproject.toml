@@ -1,3 +1,10 @@
+[project]
+name = "eth-loadgen"
+version = "1.0.0"
+description = "Ethereum load generator for TPS testing"
+readme = "README.md"
+requires-python = ">=3.10"
+
 [tool.black]
 line-length = 120
 target-version = ['py310']
