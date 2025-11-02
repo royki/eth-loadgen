@@ -1,4 +1,4 @@
-name: Release and Docker CI
+name: CI - Docker Build, Push, and Release
 
 on:
   workflow_dispatch:
