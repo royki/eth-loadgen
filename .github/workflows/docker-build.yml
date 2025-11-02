@@ -3,9 +3,20 @@ name: CI - Docker Build, Push, and Release
 on:
   workflow_dispatch:
     inputs:
+      branch:
+        description: 'Branch to build from (leave empty for current branch)'
+        required: false
+      publish_docker:
+        description: 'Publish Docker image'
+        type: boolean
+        default: true
       version:
-        description: 'Release version (semver)'
-        required: true
+        description: 'Release version (semver) - only needed if creating release'
+        required: false
+      create_release:
+        description: 'Create GitHub Release'
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -27,6 +38,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
       - uses: actions/setup-python@v4
         with:
           python-version: "3.11"
@@ -41,6 +54,8 @@ jobs:
     needs: lint
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
@@ -56,11 +71,11 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest
-            type=semver,pattern={{version}}
+            type=semver,pattern={{version}},enable=${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '') }}
             type=sha
 
       - name: Build and push Docker
-        if: github.ref_type == 'tag' || github.ref == 'refs/heads/main'
+        if: github.ref_type == 'tag' || github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_docker == true)
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -84,15 +99,18 @@ jobs:
     name: GitHub Release
     runs-on: ubuntu-latest
     needs: [lint, docker-build]
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == true && github.event.inputs.version != '')
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
 
-      - name: Create Release (if tag or manual)
+      - name: Create Release
         id: release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref_name || github.event.inputs.version }}
-          name: Release ${{ github.ref_name || github.event.inputs.version }}
-          body: "Release for version ${{ github.ref_name || github.event.inputs.version }}"
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version }}
+          name: Release ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version }}
+          body: "Release for version ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
