@@ -48,6 +48,8 @@ jobs:
       - name: Check for code changes
         id: filter
         uses: dorny/paths-filter@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           filters: |
             skip-lint:
