@@ -71,6 +71,7 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest
+            type=ref,event=tag
             type=semver,pattern={{version}},enable=${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '') }}
             type=sha
 
