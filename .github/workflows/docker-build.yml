@@ -72,11 +72,11 @@ jobs:
           tags: |
             type=raw,value=latest
             type=ref,event=tag
-            type=semver,pattern={{version}},enable=${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '') }}
+            # type=semver,pattern={{version}},enable=${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '') }}
             type=sha
 
       - name: Build and push Docker
-        if: github.ref_type == 'tag' || github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_docker == true)
+        if: github.ref_type == 'tag' || github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_docker == 'true')
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -100,7 +100,7 @@ jobs:
     name: GitHub Release
     runs-on: ubuntu-latest
     needs: [lint, docker-build]
-    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == true && github.event.inputs.version != '')
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true' && github.event.inputs.version != '')
     steps:
       - uses: actions/checkout@v4
         with:
