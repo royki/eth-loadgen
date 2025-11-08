@@ -205,4 +205,66 @@ def add_block_metrics_prometheus(block_monitor):
     lines.append("# TYPE eth_block_total_blocks_tracked counter")
     lines.append(f'eth_block_total_blocks_tracked {stats.get("total_blocks_tracked", 0)}')
 
+    # Finalized block metrics
+    finalized_block_number = stats.get("finalized_block_number")
+    finalized_block_timestamp = stats.get("finalized_block_timestamp")
+
+    lines.append("# HELP eth_finalized_block_number Finalized block number")
+    lines.append("# TYPE eth_finalized_block_number gauge")
+    if finalized_block_number is not None:
+        lines.append(f"eth_finalized_block_number {finalized_block_number}")
+    else:
+        lines.append("eth_finalized_block_number 0")
+
+    lines.append("# HELP eth_finalized_block_timestamp Finalized block timestamp (UNIX)")
+    lines.append("# TYPE eth_finalized_block_timestamp gauge")
+    if finalized_block_timestamp is not None:
+        lines.append(f"eth_finalized_block_timestamp {finalized_block_timestamp}")
+    else:
+        lines.append("eth_finalized_block_timestamp 0")
+
+    return "\n".join(lines)
+
+
+def add_network_metrics_prometheus(w3):
+    """
+    Add network information metrics to Prometheus format.
+
+    Args:
+        w3: Web3 instance (can be None)
+
+    Returns:
+        str: Prometheus-formatted network metrics
+    """
+    lines = []
+
+    if w3 is None:
+        return "\n".join(lines)
+
+    try:
+        chain_id = w3.eth.chain_id
+        network_id = w3.net.version
+        current_block = w3.eth.block_number
+        sync_status = w3.eth.syncing
+
+        lines.append("# HELP eth_chain_id Ethereum chain ID")
+        lines.append("# TYPE eth_chain_id gauge")
+        lines.append(f"eth_chain_id {chain_id}")
+
+        lines.append("# HELP eth_network_id Ethereum network ID")
+        lines.append("# TYPE eth_network_id gauge")
+        lines.append(f"eth_network_id {network_id}")
+
+        lines.append("# HELP eth_current_block_number Current block number")
+        lines.append("# TYPE eth_current_block_number gauge")
+        lines.append(f"eth_current_block_number {current_block}")
+
+        lines.append("# HELP eth_node_syncing Node sync status (1=syncing, 0=synced)")
+        lines.append("# TYPE eth_node_syncing gauge")
+        syncing_value = 1 if sync_status else 0
+        lines.append(f"eth_node_syncing {syncing_value}")
+    except Exception:
+        # If network info cannot be fetched, return empty lines
+        pass
+
     return "\n".join(lines)

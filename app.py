@@ -65,6 +65,24 @@ def run_server_mode(w3, pref_account, pref_key_hex):
     print("ETH TPS Workload - SERVER MODE")
     print("=" * 60)
 
+    # Display network details at startup
+    print("\n🌐 Network Details:")
+    try:
+        chain_id = w3.eth.chain_id
+        network_id = w3.net.version
+        current_block = w3.eth.block_number
+        sync_status = w3.eth.syncing
+
+        print(f"   Chain ID: {chain_id}")
+        print(f"   Network ID: {network_id}")
+        print(f"   Current Block: {current_block}")
+        if sync_status:
+            print(f"   Syncing: {sync_status}")
+        else:
+            print("   Syncing: False (fully synced)")
+    except Exception as e:
+        print(f"   ⚠️  Failed to fetch network info: {e}")
+
     # Server mode configuration from config.py
     NUM_ACCOUNTS = SERVER_NUM_ACCOUNTS
     FUND_AMOUNT = SERVER_FUND_AMOUNT
