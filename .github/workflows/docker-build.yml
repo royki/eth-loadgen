@@ -72,8 +72,13 @@ jobs:
           tags: |
             type=raw,value=latest
             type=ref,event=tag
-            # type=semver,pattern={{version}},enable=${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '') }}
             type=sha
+
+      - name: Set version tag for manual workflow
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
+        id: version-tag
+        run: |
+          echo "tag=${{ env.IMAGE_NAME }}:${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker
         if: github.ref_type == 'tag' || github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_docker == 'true')
@@ -82,7 +87,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' && format('{0},{1}', steps.meta.outputs.tags, steps.version-tag.outputs.tag) || steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
