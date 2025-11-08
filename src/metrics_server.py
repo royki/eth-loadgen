@@ -5,6 +5,7 @@ from src.prometheus_exporter import (
     format_prometheus_metrics,
     add_system_metrics_prometheus,
     add_block_metrics_prometheus,
+    add_network_metrics_prometheus,
 )
 
 
@@ -74,6 +75,11 @@ class MetricsHandler(BaseHTTPRequestHandler):
             block_metrics = add_block_metrics_prometheus(self.block_monitor)
             if block_metrics:
                 prom_output += "\n\n" + block_metrics
+
+            # Add network metrics if available
+            network_metrics = add_network_metrics_prometheus(self.w3)
+            if network_metrics:
+                prom_output += "\n\n" + network_metrics
 
             # Send response
             self.send_response(200)
