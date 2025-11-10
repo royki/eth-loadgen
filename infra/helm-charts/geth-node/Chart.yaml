@@ -1,0 +1,6 @@
+apiVersion: v2
+name: geth-node
+description: Minimal Helm chart for Ethereum Geth Node in dev mode
+type: application
+version: 0.1.0
+appVersion: "1.16.5"

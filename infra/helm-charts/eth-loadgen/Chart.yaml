@@ -1,0 +1,7 @@
+apiVersion: v2
+name: eth-loadgen
+description: Minimal Helm chart for Ethereum Load Generator
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+

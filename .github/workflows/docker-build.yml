@@ -22,10 +22,14 @@ on:
       - main
     tags:
       - 'v*.*.*'
+    paths-ignore:
+      - 'infra/**'
   pull_request:
     branches:
       - main
       - dev
+    paths-ignore:
+      - 'infra/**'
 
 env:
   DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}

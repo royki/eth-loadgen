@@ -1,0 +1,94 @@
+replicaCount: 1
+
+image:
+  repository: ethereum/client-go
+  tag: alltools-v1.16.5
+  pullPolicy: IfNotPresent
+  name: geth
+  command: ["geth"]
+  args:
+    - "--dev"
+    - "--dev.period=6"
+    - "--http"
+    - "--http.addr=0.0.0.0"
+    - "--http.api=eth,net,web3"
+    - "--http.vhosts=*"
+    - "--ws"
+    - "--ws.addr=0.0.0.0"
+    - "--ws.api=eth,net,web3"
+    - "--ws.origins=*"
+    - "--metrics"
+    - "--metrics.addr=0.0.0.0"
+    - "--metrics.port=6060"
+    - "--datadir=/data"
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 1
+    memory: 2Gi
+
+volumes:
+  data:
+    name: geth-storage
+    mountPath: /data
+  keystore:
+    name: keystore
+    mountPath: /keystore
+
+pvc:
+  name: geth-data-pvc
+  storageClassName: standard
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+
+# Port configuration
+httpPort: 8545
+wsPort: 8546
+metricsPort: 6060
+extraContainerPorts: []
+
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8545
+      targetPort: 8545
+    - name: metrics
+      port: 6060
+      targetPort: 6060
+
+keystore:
+  enabled: true
+  type: configmap # options: configmap, secret
+  name: geth-keystore
+  data:
+    UTC--2025-10-26T12-00-00.000000000Z--7e5f4552091a69125abcdef1234567890abcdef: |
+      {"address":"71562b71999873db5b286df957af199ec94617f7","crypto":{"cipher":"aes-128-ctr","ciphertext":"919f5d13ba21070d235e357fa0272d6e1a2bf93f6be54801a9f478a7b66f1d5e","cipherparams":{"iv":"97083c4f8fb741a92af72d92ca00196d"},"kdf":"scrypt","kdfparams":{"dklen":32,"n":4096,"p":6,"r":8,"salt":"24ceca351742e762a441f74593dc187117075c98dd19a29abd4cc6162ea985c7"},"mac":"127db5ecec20ffb1d2abc470ecf37c80fd91cd47bfa2fcdea057a345d5bf9359"},"id":"12bdc05a-aa9e-495d-876f-318995339070","version":3}
+
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  hosts:
+    - host: geth-node.local
+      paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: geth-node-service
+              port:
+                number: 8545
+tls: []
