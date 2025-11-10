@@ -1,0 +1,136 @@
+replicaCount: 1
+
+# Deployment strategy
+strategy:
+  type: Recreate # options: Recreate, RollingUpdate
+
+image:
+  repository: royki/eth-loadgen
+  tag: v1.0.1
+  pullPolicy: IfNotPresent
+  name: eth-loadgen
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Application configuration
+mode: server # options: server, cli
+command: ["python3", "app.py", "--server"]
+
+# Environment variables
+env:
+  # RPC Configuration
+  RPC_URL: "http://geth-node-service.dev.svc.cluster.local:8545"
+  PYTHONUNBUFFERED: "1"
+
+  # Server Mode Configuration
+  SERVER_NUM_ACCOUNTS: "100"
+  SERVER_FUND_AMOUNT: "1000"
+  SERVER_TX_MIN: "0.1"
+  SERVER_TX_MAX: "100"
+  SERVER_TX_INCREMENT: "0.5"
+  SERVER_TX_MODE: "ascending"
+  SERVER_LOAD_MODE: "random"
+  SERVER_TPS: "5"
+  SERVER_DURATION: "300"
+  SERVER_GAS: "21000"
+
+  # Metrics Server Configuration
+  METRICS_HOST: "0.0.0.0"
+  METRICS_PORT: "9000"
+
+  # Block Monitor Configuration
+  BLOCK_POLL_INTERVAL: "1.0"
+  METRICS_WINDOW_PERIOD: "20"
+
+  # Keystore Configuration (optional - can be set via Secret)
+  # If keystore is mounted as volume, set UTC_FILE_PATH to the full path
+  # Example: UTC_FILE_PATH: /app/keystores/UTC--2025-10-26T12-15-30.572257963Z--71562b71999873db5b286df957af199ec94617f7
+  UTC_FILE_PATH: ""
+  UTC_PASSWORD: ""
+  PRIVATE_KEY: ""
+
+# Keystore volume (optional)
+# How it works:
+# - UTC file content goes in keystore.data as key-value pairs
+# - Key = filename (e.g., UTC--2025-10-26T12-15-30.572257963Z--71562b71999873db5b286df957af199ec94617f7)
+# - Value = UTC file JSON content (as string, use | for multiline)
+# - Files are mounted at /app/keystores/ in the pod
+# - Set UTC_FILE_PATH env var to: /app/keystores/<filename>
+keystore:
+  enabled: true
+  type: configmap # options: configmap, secret
+  name: eth-loadgen-keystore
+  # Example data structure:
+  # data:
+  #   UTC--2025-10-26T12-15-30.572257963Z--71562b71999873db5b286df957af199ec94617f7: |
+  #     {"address":"71562b71999873db5b286df957af199ec94617f7","crypto":{...},"id":"...","version":3}
+  data:
+    UTC--2025-10-26T12-15-30.572257963Z--71562b71999873db5b286df957af199ec94617f7: |
+      {"address":"71562b71999873db5b286df957af199ec94617f7","crypto":{"cipher":"aes-128-ctr","ciphertext":"919f5d13ba21070d235e357fa0272d6e1a2bf93f6be54801a9f478a7b66f1d5e","cipherparams":{"iv":"97083c4f8fb741a92af72d92ca00196d"},"kdf":"scrypt","kdfparams":{"dklen":32,"n":4096,"p":6,"r":8,"salt":"24ceca351742e762a441f74593dc187117075c98dd19a29abd4cc6162ea985c7"},"mac":"127db5ecec20ffb1d2abc470ecf37c80fd91cd47bfa2fcdea057a345d5bf9359"},"id":"12bdc05a-aa9e-495d-876f-318995339070","version":3}
+
+volumes:
+  keystore:
+    name: keystore
+    mountPath: /app/keystores
+
+# Port configuration
+metricsPort: 9000
+
+# Health check probes
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /metrics
+    port: metrics
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /metrics
+    port: metrics
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+service:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 9000
+      targetPort: 9000
+
+# Ingress configuration (optional)
+# For accessing metrics externally via HTTP
+ingress:
+  enabled: false
+  ingressClassName: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  hosts:
+    - host: eth-loadgen.local
+      paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: eth-loadgen-service
+              port:
+                number: 9000
+tls: []

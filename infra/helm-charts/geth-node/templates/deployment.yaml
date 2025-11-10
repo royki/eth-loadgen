@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}
+  labels:
+    app: {{ .Chart.Name }}
+spec:
+  strategy:
+    type: Recreate
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}
+    spec:
+      containers:
+        - name: {{ .Values.image.name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: {{ toYaml .Values.image.command | nindent 10 }}
+          args: {{ toYaml .Values.image.args | nindent 10 }}
+          ports:
+            {{- if .Values.extraContainerPorts }}
+            {{- toYaml .Values.extraContainerPorts | nindent 12 }}
+            {{- end }}
+            - name: http-rpc
+              containerPort: {{ .Values.httpPort }}
+              protocol: TCP
+            - name: ws-rpc
+              containerPort: {{ .Values.wsPort }}
+              protocol: TCP
+            {{- if .Values.authRpcPort }}
+            - name: auth-rpc
+              containerPort: {{ .Values.authRpcPort }}
+              protocol: TCP
+            {{- end }}
+            {{- if .Values.metricsPort }}
+            - name: metrics
+              containerPort: {{ .Values.metricsPort }}
+              protocol: TCP
+            {{- end }}
+          volumeMounts:
+            - name: {{ .Values.volumes.data.name }}
+              mountPath: {{ .Values.volumes.data.mountPath }}
+            {{- if .Values.keystore.enabled }}
+            - name: {{ .Values.volumes.keystore.name }}
+              mountPath: {{ .Values.volumes.keystore.mountPath }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: {{ .Values.volumes.data.name }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.pvc.name }}
+        {{- if .Values.keystore.enabled }}
+        - name: {{ .Values.volumes.keystore.name }}
+          {{- if eq .Values.keystore.type "secret" }}
+          secret:
+            secretName: {{ .Values.keystore.name }}
+          {{- else }}
+          configMap:
+            name: {{ .Values.keystore.name }}
+          {{- end }}
+        {{- end }}

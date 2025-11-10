@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard
+  labels:
+    app: {{ .Chart.Name }}
+data:
+  eth-loadgen-dashboard.json: |
+{{ .Files.Get "dashboards/eth-loadgen-dashboard.json" | indent 4 }}
+  geth-node-dashboard-15750.json: |
+{{ .Files.Get "dashboards/geth-node-dashboard-15750.json" | indent 4 }}
+  geth-node-dashboard-18666.json: |
+{{ .Files.Get "dashboards/geth-node-dashboard-18666.json" | indent 4 }}
+

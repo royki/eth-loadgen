@@ -1,0 +1,93 @@
+# Grafana configuration
+grafana:
+  enabled: true
+
+  replicas: 1
+  # Admin credentials
+  adminUser: admin
+  adminPassword: admin  # Change this in production!
+
+  # Image configuration
+  image:
+    repository: grafana/grafana
+    tag: "12.2.1"
+    pullPolicy: IfNotPresent
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  persistence:
+    enabled: true
+    type: pvc
+    storageClassName: standard
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 3000
+    targetPort: 3000  # Grafana default port
+
+  # Ingress configuration (optional)
+  # Official Grafana chart expects 'hosts' as a list of strings, not maps
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    hosts:
+      - grafana.local
+    # Path defaults to '/' automatically
+
+  # Configure Prometheus as datasource
+  # Official Grafana chart expects: datasources.<filename>.datasources (list)
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          access: proxy
+          url: http://prometheus-server.monitoring.svc.cluster.local:9090
+          isDefault: true
+          editable: true
+
+  # Pre-configured dashboards
+  # Official Grafana chart expects: dashboardProviders.<filename>.providers (list)
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+
+  # Dashboard definitions - using ConfigMap instead of inline JSON
+  # Dashboard JSON is stored in ConfigMap and mounted via extraConfigmapMounts
+  dashboards:
+    default: {}
+
+  # Additional environment variables
+  env: {}
+
+  # Mount ConfigMap containing dashboard JSON
+  # Dashboard is loaded from /var/lib/grafana/dashboards/default/ (path from dashboardProviders)
+  # Official Grafana chart expects 'configMap' not 'configMapName'
+  extraConfigmapMounts:
+    - name: grafana-dashboard
+      configMap: grafana-dashboard
+      mountPath: /var/lib/grafana/dashboards/default
+      readOnly: true

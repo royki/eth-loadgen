@@ -1,0 +1,78 @@
+# Prometheus configuration
+prometheus:
+  enabled: true
+
+  # Server configuration
+  server:
+    image:
+      repository: quay.io/prometheus/prometheus
+      tag: "v3.7.3"
+      pullPolicy: IfNotPresent
+
+    # Resource limits
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+    # Persistent volume for Prometheus data
+    persistentVolume:
+      enabled: true
+      size: 1Gi
+      storageClass: standard
+      accessModes:
+        - ReadWriteOnce
+
+    # Retention period
+    retention: 1d
+
+    # Service configuration
+    # Official chart uses 'servicePort' not 'port'
+    service:
+      type: ClusterIP
+      servicePort: 9090  # Service port (what clients connect to)
+      # targetPort defaults to container port 9090 automatically
+
+    # Ingress configuration (optional)
+    # Official Prometheus chart expects 'hosts' as a list of strings, not maps
+    ingress:
+      enabled: true
+      ingressClassName: nginx
+      annotations:
+        nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+      hosts:
+        - prometheus.local
+      # Path defaults to '/' automatically
+      tls: []
+
+  extraScrapeConfigs: |
+    - job_name: 'eth-loadgen'
+      static_configs:
+        - targets:
+            - 'eth-loadgen-service.app.svc.cluster.local:9000' # eth-loadgen service in app namespace
+      metrics_path: '/metrics'
+      scrape_interval: 30s
+      scrape_timeout: 10s
+    - job_name: 'geth-node'
+      static_configs:
+        - targets:
+            - 'geth-node-service.dev.svc.cluster.local:6060' # geth-node service in dev namespace
+      metrics_path: '/debug/metrics/prometheus'
+      scrape_interval: 30s
+      scrape_timeout: 10s
+
+  alertmanager:
+    enabled: false
+
+  kube-state-metrics:
+    enabled: false
+
+  prometheus-node-exporter:
+    enabled: false
+
+  prometheus-pushgateway:
+    enabled: false
+
