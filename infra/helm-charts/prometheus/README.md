@@ -8,7 +8,7 @@ Helm chart for Prometheus monitoring
 
 | Repository | Name | Version |
 |------------|------|---------|
-| https://prometheus-community.github.io/helm-charts | prometheus | 27.45.0 |
+| <https://prometheus-community.github.io/helm-charts> | prometheus | 27.45.0 |
 
 ## Values
 

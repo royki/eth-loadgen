@@ -82,21 +82,32 @@ docker-clean:
 	# docker images -a |  grep "<none>" | awk '{print $3}' | xargs docker rmi --force
 
 # Default RPC URL if not provided
-RPC_URL ?= http://geth-node.local:80
+RPC_URL ?= http://localhost:8545
 TARGET_INTERVAL ?= 6
 CONTINUOUS ?=1
 NUM_BLOCKS ?=
+PORT_FORWARD_PORT ?= 8545
 
-check-block-time:
-	@echo "Using RPC_URL=$(RPC_URL)"
-	@echo "Using TARGET_INTERVAL=$(TARGET_INTERVAL)"
-	@echo "Using CONTINUOUS=$(CONTINUOUS)"
-	@echo "Using NUM_BLOCKS=$(NUM_BLOCKS)"
-	@python3 scripts/check_block_time.py \
-		--rpc-url $(RPC_URL) \
-		--target $(TARGET_INTERVAL) \
-		$(if $(CONTINUOUS),--continuous,) \
-		$(if $(NUM_BLOCKS),--num-blocks $(NUM_BLOCKS),)
+check-network-block-info:
+	@echo "Setting up port-forward for geth-node-service..."
+	@kubectl port-forward -n dev service/geth-node-service $(PORT_FORWARD_PORT):8545 > /tmp/geth-port-forward.log 2>&1 & \
+		echo $$! > /tmp/geth-port-forward.pid; \
+		sleep 2; \
+		echo "✅ Port-forward established (PID: $$(cat /tmp/geth-port-forward.pid))"; \
+		echo "Using RPC_URL=http://localhost:$(PORT_FORWARD_PORT)"; \
+		echo "Using TARGET_INTERVAL=$(TARGET_INTERVAL)"; \
+		echo "Using CONTINUOUS=$(CONTINUOUS)"; \
+		echo "Using NUM_BLOCKS=$(NUM_BLOCKS)"; \
+		EXIT_CODE=0; \
+		python3 scripts/check_block_time.py \
+			--rpc-url http://localhost:$(PORT_FORWARD_PORT) \
+			--target $(TARGET_INTERVAL) \
+			$(if $(CONTINUOUS),--continuous,) \
+			$(if $(NUM_BLOCKS),--num-blocks $(NUM_BLOCKS),) || EXIT_CODE=$$?; \
+		kill $$(cat /tmp/geth-port-forward.pid 2>/dev/null) 2>/dev/null || true; \
+		rm -f /tmp/geth-port-forward.pid /tmp/geth-port-forward.log; \
+		echo "Port-forward stopped"; \
+		exit $$EXIT_CODE
 
 # Infrastructure commands
 infra-check:
@@ -161,11 +172,11 @@ deploy-all: deploy-geth deploy-eth-loadgen deploy-prometheus deploy-grafana
 	@echo "✅ All applications deployed"
 
 infra-down:
-	@helm uninstall geth-node --namespace dev 2>/dev/null || true; \
-	helm uninstall eth-loadgen --namespace app 2>/dev/null || true; \
-	helm uninstall prometheus --namespace monitoring 2>/dev/null || true; \
 	helm uninstall grafana --namespace monitoring 2>/dev/null || true; \
-	kubectl delete namespace dev 2>/dev/null || true; \
-	kubectl delete namespace app 2>/dev/null || true; \
+	helm uninstall prometheus --namespace monitoring 2>/dev/null || true; \
+	helm uninstall eth-loadgen --namespace app 2>/dev/null || true; \
+	@helm uninstall geth-node --namespace dev 2>/dev/null || true; \
 	kubectl delete namespace monitoring 2>/dev/null || true; \
+	kubectl delete namespace app 2>/dev/null || true; \
+	kubectl delete namespace dev 2>/dev/null || true; \
 	echo "✅ All applications stopped"
