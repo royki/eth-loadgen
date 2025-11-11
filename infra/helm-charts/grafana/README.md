@@ -8,7 +8,7 @@ Helm chart for Grafana dashboard
 
 | Repository | Name | Version |
 |------------|------|---------|
-| https://grafana.github.io/helm-charts | grafana | 10.1.4 |
+| <https://grafana.github.io/helm-charts> | grafana | 10.1.4 |
 
 ## Values
 

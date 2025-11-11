@@ -24,13 +24,18 @@ on:
       - 'v*.*.*'
     paths-ignore:
       - 'infra/**'
+      - '*.md'
+      - 'Makefile'
+      - '*.example.*'
   pull_request:
     branches:
       - main
       - dev
     paths-ignore:
       - 'infra/**'
-
+      - '*.md'
+      - 'Makefile'
+      - '*.example.*'
 env:
   DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
   DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
